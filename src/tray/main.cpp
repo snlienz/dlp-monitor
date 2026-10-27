@@ -16,6 +16,7 @@
 #include <nlohmann/json.hpp>
 
 #include "common/event.h"
+#include "common/handle.h"
 #include "common/wstr.h"
 #include "tray/clipboard.h"
 #include "tray/pipe_client.h"
@@ -293,10 +294,10 @@ LRESULT CALLBACK wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 
 }  // namespace
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int) {
     // One tray per session; a second launch just exits.
-    HANDLE mutex = ::CreateMutexW(nullptr, TRUE, L"Local\\DlpMonitorTray");
-    if (::GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+    dlp::UniqueHandle mutex(::CreateMutexW(nullptr, TRUE, L"Local\\DlpMonitorTray"));
+    if (!mutex || ::GetLastError() == ERROR_ALREADY_EXISTS) return 0;
 
     INITCOMMONCONTROLSEX icc{sizeof(icc), ICC_LISTVIEW_CLASSES | ICC_BAR_CLASSES};
     ::InitCommonControlsEx(&icc);
@@ -343,6 +344,5 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     // Events posted after the window died are still owned by the queue; free them.
     while (::PeekMessageW(&msg, nullptr, WM_APP_EVENT, WM_APP_EVENT, PM_REMOVE))
         delete reinterpret_cast<DlpEvent*>(msg.lParam);
-    ::CloseHandle(mutex);
     return 0;
 }

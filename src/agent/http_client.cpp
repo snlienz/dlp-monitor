@@ -81,6 +81,8 @@ bool HttpClient::run_websocket(const std::string& path, const std::function<void
     HINTERNET ws = nullptr;
     {
         InternetHandle req(open_request(L"GET", path));
+        // The upgrade option takes no buffer by design (documented usage), which /analyze flags.
+#pragma warning(suppress : 6387)
         if (!req.h || !::WinHttpSetOption(req.h, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, nullptr, 0) ||
             !::WinHttpSendRequest(req.h, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
             !::WinHttpReceiveResponse(req.h, nullptr))
