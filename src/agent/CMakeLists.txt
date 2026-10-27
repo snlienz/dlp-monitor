@@ -1,20 +1,23 @@
 # Agent logic without the process entry point, linked by DlpAgent.exe and the unit tests.
 add_library(dlp_agent_core STATIC
   agent.cpp
+  cloud_client.cpp
   config.cpp
   content_scanner.cpp
   detectors.cpp
   etw_parser.cpp
   etw_session.cpp
   file_tracker.cpp
+  http_client.cpp
   network_tracker.cpp
   pipe_server.cpp
   policy_engine.cpp
   process_tracker.cpp
   service.cpp
+  spool.cpp
   volume_map.cpp)
 target_include_directories(dlp_agent_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
-target_link_libraries(dlp_agent_core PUBLIC dlp_common tdh advapi32 ws2_32 shell32 ole32)
+target_link_libraries(dlp_agent_core PUBLIC dlp_common tdh advapi32 winhttp ws2_32 shell32 ole32)
 
 add_executable(DlpAgent main.cpp)
 target_link_libraries(DlpAgent PRIVATE dlp_agent_core)

@@ -1,5 +1,6 @@
 #pragma once
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
@@ -35,6 +36,17 @@ public:
         std::unique_lock lock(mu_);
         cv_.wait(lock, [&] { return closed_ || !items_.empty(); });
         if (items_.empty()) return std::nullopt;
+        T item = std::move(items_.front());
+        items_.pop_front();
+        return item;
+    }
+
+    // Like pop(), but gives up after `timeout`. Returns nullopt on timeout or when closed and drained.
+    template <class Rep, class Period>
+    std::optional<T> pop_for(std::chrono::duration<Rep, Period> timeout) {
+        std::unique_lock lock(mu_);
+        if (!cv_.wait_for(lock, timeout, [&] { return closed_ || !items_.empty(); }) || items_.empty())
+            return std::nullopt;
         T item = std::move(items_.front());
         items_.pop_front();
         return item;

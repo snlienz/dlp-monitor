@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "agent/agent.h"
+#include "agent/cloud_client.h"
 #include "agent/config.h"
 #include "agent/pipe_server.h"
 #include "agent/service.h"
@@ -56,7 +57,27 @@ int agent_body(dlp::Config config, HANDLE stop_event) {
     });
     agent->add_sink(pipe);
 
+    std::shared_ptr<dlp::CloudClient> cloud;
+    if (!config.cloud_url.empty()) {
+        cloud = std::make_shared<dlp::CloudClient>(dlp::CloudClient::Options{
+            config.cloud_url,
+            config.device_id,
+            config.spool_path(),
+            [&agent] { return agent->policy_version(); },
+            [&agent](const std::string& json) -> std::string {
+                try {
+                    agent->apply_policy(json, /*persist=*/true);
+                    return {};
+                } catch (const std::exception& e) {
+                    return e.what();
+                }
+            },
+        });
+        agent->add_sink(cloud);
+    }
+
     agent->start();
+    if (cloud) cloud->start();
     try {
         pipe->start();
     } catch (const std::exception& e) {
@@ -70,6 +91,7 @@ int agent_body(dlp::Config config, HANDLE stop_event) {
     dlp::log::info("stop requested");
     agent->stop();
     pipe->stop();
+    if (cloud) cloud->stop();  // last, so events from the agent's final drain get spooled
     return 0;
 }
 
