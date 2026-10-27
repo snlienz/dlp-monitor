@@ -9,6 +9,7 @@
 
 #include "agent/agent.h"
 #include "agent/config.h"
+#include "agent/pipe_server.h"
 #include "agent/service.h"
 #include "common/log.h"
 #include "common/wstr.h"
@@ -40,13 +41,35 @@ int agent_body(dlp::Config config, HANDLE stop_event) {
 
     auto agent = std::make_unique<dlp::Agent>(config);
     agent->add_sink(std::make_shared<LogSink>());
+
+    // The tray app runs in the user's session, where the clipboard lives; session 0 can't
+    // see it, so the tray forwards clipboard text here for scanning.
+    auto pipe = std::make_shared<dlp::PipeServer>([&agent](const nlohmann::json& msg, uint32_t client_pid) {
+        const auto type = msg.value("type", "");
+        if (type == "clipboard") {
+            const auto owner = msg.value("pid", client_pid);
+            if (!agent->submit_text("clipboard", msg.value("text", ""), owner))
+                dlp::log::warn("scan queue full, dropped clipboard scan");
+        } else if (type == "hello") {
+            dlp::log::info("tray hello from pid {} (session {})", client_pid, msg.value("session", 0));
+        }
+    });
+    agent->add_sink(pipe);
+
     agent->start();
+    try {
+        pipe->start();
+    } catch (const std::exception& e) {
+        // Most likely another process owns the pipe name. Keep protecting the endpoint anyway.
+        dlp::log::error("pipe server unavailable, tray disabled: {}", e.what());
+    }
     dlp::report_running();
     dlp::log::info("agent running (device {})", config.device_id);
 
     ::WaitForSingleObject(stop_event, INFINITE);
     dlp::log::info("stop requested");
     agent->stop();
+    pipe->stop();
     return 0;
 }
 

@@ -10,6 +10,7 @@ add_executable(dlp_tests
   detectors_test.cpp
   event_test.cpp
   pipe_protocol_test.cpp
+  pipe_server_test.cpp
   policy_engine_test.cpp
   trackers_test.cpp)
 target_link_libraries(dlp_tests PRIVATE dlp_agent_core GTest::gtest_main)

@@ -130,8 +130,8 @@ void Agent::publish(const DlpEvent& event) {
     for (const auto& s : sinks_) s->publish(event);
 }
 
-bool Agent::submit_text(std::string channel, std::string text, uint32_t pid, std::string image) {
-    return jobs_.try_push(ScanText{std::move(channel), std::move(text), pid, std::move(image)});
+bool Agent::submit_text(std::string channel, std::string text, uint32_t pid) {
+    return jobs_.try_push(ScanText{std::move(channel), std::move(text), pid});
 }
 
 void Agent::apply_policy(std::string_view json_text, bool persist) {
@@ -294,9 +294,10 @@ void Agent::handle(const ScanFile& job) {
 }
 
 void Agent::handle(const ScanText& job) {
+    const auto image = to_utf8(processes_.image(job.pid));
     for (auto& v : engine_.evaluate(job.channel, job.text)) {
         v.pid = job.pid;
-        v.image = job.image;
+        v.image = image;
         v.target = job.channel;
         v.bytes = job.text.size();
         violations_.fetch_add(1, std::memory_order_relaxed);

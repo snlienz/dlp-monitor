@@ -8,6 +8,7 @@ add_library(dlp_agent_core STATIC
   etw_session.cpp
   file_tracker.cpp
   network_tracker.cpp
+  pipe_server.cpp
   policy_engine.cpp
   process_tracker.cpp
   service.cpp

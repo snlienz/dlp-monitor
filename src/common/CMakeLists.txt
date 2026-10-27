@@ -1,6 +1,7 @@
 add_library(dlp_common STATIC
   event.cpp
   log.cpp
+  pipe_connection.cpp
   pipe_protocol.cpp
   wstr.cpp)
 target_include_directories(dlp_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

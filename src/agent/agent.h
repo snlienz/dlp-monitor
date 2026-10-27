@@ -44,7 +44,7 @@ public:
 
     // Queue text from another channel (clipboard via the tray app). Returns false if the
     // scan queue is full.
-    bool submit_text(std::string channel, std::string text, uint32_t pid, std::string image);
+    bool submit_text(std::string channel, std::string text, uint32_t pid);
 
     // Validates and applies a new policy; throws std::runtime_error on invalid policy.
     void apply_policy(std::string_view json_text, bool persist);
@@ -62,7 +62,6 @@ private:
         std::string channel;
         std::string text;
         uint32_t pid;
-        std::string image;
     };
     using Job = std::variant<ScanFile, ScanText>;
 

@@ -24,6 +24,7 @@ endif()
 
 add_subdirectory(src/common)
 add_subdirectory(src/agent)
+add_subdirectory(src/tray)
 
 if(DLP_BUILD_TESTS)
   enable_testing()
