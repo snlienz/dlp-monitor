@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "scan_limit_bytes": 8388608,
+  "network_upload_threshold_bytes": 52428800,
+  "monitored_paths": ["C:\\DlpTest\\"],
+  "keywords": {
+    "confidential": ["CONFIDENTIAL", "INTERNAL ONLY", "機密", "限閱"]
+  },
+  "rules": [
+    {
+      "id": "pci-card",
+      "name": "Payment card numbers",
+      "channels": ["usb", "clipboard"],
+      "detectors": ["credit_card"],
+      "min_matches": 1,
+      "severity": "high",
+      "action": "alert"
+    },
+    {
+      "id": "pii-tw-id",
+      "name": "Taiwan national ID numbers",
+      "channels": ["usb", "clipboard"],
+      "detectors": ["tw_national_id"],
+      "min_matches": 1,
+      "severity": "high",
+      "action": "alert"
+    },
+    {
+      "id": "secrets",
+      "name": "Cloud credentials and tokens",
+      "channels": ["usb", "clipboard"],
+      "detectors": ["aws_access_key", "github_token"],
+      "min_matches": 1,
+      "severity": "high",
+      "action": "alert"
+    },
+    {
+      "id": "bulk-email",
+      "name": "Bulk email address export",
+      "channels": ["usb"],
+      "detectors": ["email"],
+      "min_matches": 20,
+      "severity": "medium",
+      "action": "log"
+    },
+    {
+      "id": "confidential-doc",
+      "name": "Documents marked confidential",
+      "channels": ["usb"],
+      "detectors": ["confidential"],
+      "min_matches": 1,
+      "severity": "medium",
+      "action": "alert"
+    }
+  ]
+}

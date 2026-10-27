@@ -1,0 +1,31 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "msvc",
+      "displayName": "Visual Studio 2026 x64",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build"
+    },
+    {
+      "name": "msvc-analyze",
+      "inherits": "msvc",
+      "binaryDir": "${sourceDir}/build-analyze",
+      "cacheVariables": { "DLP_ANALYZE": "ON", "DLP_BUILD_TESTS": "OFF" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "msvc", "configuration": "Debug" },
+    { "name": "release", "configurePreset": "msvc", "configuration": "RelWithDebInfo" },
+    { "name": "analyze", "configurePreset": "msvc-analyze", "configuration": "Debug" }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "msvc",
+      "configuration": "Debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
