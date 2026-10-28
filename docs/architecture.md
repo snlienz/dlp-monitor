@@ -8,66 +8,65 @@ Four trigger points feed the agent. Three are kernel ETW events; the clipboard c
 through the tray app because the service cannot see it.
 
 ```mermaid
-flowchart LR
-    subgraph kernel["Kernel ETW providers (event-ID filter applied inside ETW)"]
-        KP["Kernel-Process<br/>1 Start · 2 Stop"]
-        KF["Kernel-File<br/>12 Create · 16 Write · 13 Cleanup"]
-        KN["Kernel-Network<br/>10 TcpSend v4 · 26 TcpSend v6"]
-    end
+flowchart TB
+    KP["Kernel-Process<br/>1 Start · 2 Stop"]
+    KF["Kernel-File<br/>12 Create · 16 Write<br/>13 Cleanup"]
+    KN["Kernel-Network<br/>10 / 26 TcpSend"]
+    CB["DlpTray.exe<br/>WM_CLIPBOARDUPDATE"]
 
-    subgraph usr["DlpTray.exe (user session)"]
-        CB["WM_CLIPBOARDUPDATE<br/>read_clipboard_text"]
-        UI["ListView, balloons"]
-    end
-
-    subgraph agent["DlpAgent.exe (LocalSystem service, session 0)"]
-        subgraph etw["etw-consumer thread: no I/O, no blocking"]
-            DISP{"Agent::on_etw<br/>route by ProviderId"}
-            ONP["on_process<br/>EventParser decodes payload"]
-            ONF["on_file<br/>EventParser decodes payload"]
-            ONN["on_network<br/>EventParser decodes payload"]
-            PT[("ProcessTracker<br/>pid → image")]
-            VM["VolumeMap<br/>\Device\HarddiskVolumeN → E:<br/>removable?"]
-            FT[("FileTracker<br/>bytes per FILE_OBJECT")]
-            NT[("NetworkTracker<br/>bytes per (pid, remote) per minute")]
+    subgraph agent["DlpAgent.exe (service, session 0)"]
+        subgraph etw["etw-consumer thread"]
+            DISP{"on_etw<br/>by ProviderId"}
+            ONP["on_process"]
+            ONF["on_file"]
+            ONN["on_network"]
+            PT[("ProcessTracker")]
+            VM["VolumeMap"]
+            FT[("FileTracker")]
+            NT[("NetworkTracker")]
         end
-        PIN["PipeServer receive<br/>type = clipboard → submit_text"]
-        Q[["BoundedQueue&lt;Job&gt;<br/>ScanFile | ScanText<br/>drop + count when full"]]
-        SW["scan-N workers<br/>read prefix → decode → PolicyEngine"]
+        PIN["PipeServer<br/>receive"]
+        Q[["BoundedQueue"]]
+        SW["scan-N workers<br/>PolicyEngine"]
         ES{{"EventSink fan-out"}}
         LS["LogSink"]
-        PS["PipeServer broadcast"]
+        PS["PipeServer<br/>broadcast"]
         CC["CloudClient"]
     end
 
-    CLOUD["mock_cloud.py<br/>REST + WebSocket"]
+    UI["DlpTray.exe<br/>ListView, balloons"]
+    CLOUD["mock_cloud.py"]
 
-    KP --> DISP
-    KF --> DISP
-    KN --> DISP
+    KP & KF & KN --> DISP
     DISP --> ONP & ONF & ONN
 
-    ONP -- "Start / Stop" --> PT
+    ONP --> PT
+    PT -. "image lookup" .-> ONN
+    PT -. "image lookup" .-> SW
 
-    ONF -- "Create: NT path" --> VM
-    VM -- "removable or in monitored_paths" --> FT
-    ONF -- "Write: += IOSize" --> FT
-    FT -- "Cleanup: ScanFile" --> Q
+    ONF -- "Create" --> VM
+    VM -- "watched path" --> FT
+    ONF -- "Write" --> FT
+    FT -- "Cleanup:<br/>ScanFile" --> Q
 
     ONN --> NT
-    NT -- "over threshold: NetworkUpload<br/>(no queue, no content scan)" --> ES
+    NT -- "over threshold:<br/>NetworkUpload" --> ES
 
-    CB -- "\\.\pipe\DlpMonitor" --> PIN
+    CB -- "pipe" --> PIN
     PIN -- "ScanText" --> Q
 
     Q --> SW
-    SW -. "pid → image" .-> PT
-    SW -- "FileWrite + violations" --> ES
+    SW -- "FileWrite,<br/>violations" --> ES
 
     ES --> LS & PS & CC
-    PS -- "\\.\pipe\DlpMonitor" --> UI
+    PS -- "pipe" --> UI
     CC -- "HTTP(S)" --> CLOUD
 ```
+
+Every handler on the ETW thread decodes the payload with `EventParser` before touching a
+tracker. Network uploads skip the queue: there is no content to scan, only a byte count.
+`ProcessTracker` emits nothing itself; it records each image path at process start so later
+events can name the process even after it has exited.
 
 | Trigger | Handler | State it updates | What it produces |
 |---|---|---|---|
