@@ -4,27 +4,79 @@ DLP Monitor is a user-mode endpoint DLP agent: a Windows service that watches fi
 process and network activity through ETW, scans content against a policy, and reports
 to a management backend. A per-user tray app shows events and covers the clipboard.
 
+Four trigger points feed the agent. Three are kernel ETW events; the clipboard comes in
+through the tray app because the service cannot see it.
+
+```mermaid
+flowchart LR
+    subgraph kernel["Kernel ETW providers (event-ID filter applied inside ETW)"]
+        KP["Kernel-Process<br/>1 Start · 2 Stop"]
+        KF["Kernel-File<br/>12 Create · 16 Write · 13 Cleanup"]
+        KN["Kernel-Network<br/>10 TcpSend v4 · 26 TcpSend v6"]
+    end
+
+    subgraph usr["DlpTray.exe (user session)"]
+        CB["WM_CLIPBOARDUPDATE<br/>read_clipboard_text"]
+        UI["ListView, balloons"]
+    end
+
+    subgraph agent["DlpAgent.exe (LocalSystem service, session 0)"]
+        subgraph etw["etw-consumer thread: no I/O, no blocking"]
+            DISP{"Agent::on_etw<br/>route by ProviderId"}
+            ONP["on_process<br/>EventParser decodes payload"]
+            ONF["on_file<br/>EventParser decodes payload"]
+            ONN["on_network<br/>EventParser decodes payload"]
+            PT[("ProcessTracker<br/>pid → image")]
+            VM["VolumeMap<br/>\Device\HarddiskVolumeN → E:<br/>removable?"]
+            FT[("FileTracker<br/>bytes per FILE_OBJECT")]
+            NT[("NetworkTracker<br/>bytes per (pid, remote) per minute")]
+        end
+        PIN["PipeServer receive<br/>type = clipboard → submit_text"]
+        Q[["BoundedQueue&lt;Job&gt;<br/>ScanFile | ScanText<br/>drop + count when full"]]
+        SW["scan-N workers<br/>read prefix → decode → PolicyEngine"]
+        ES{{"EventSink fan-out"}}
+        LS["LogSink"]
+        PS["PipeServer broadcast"]
+        CC["CloudClient"]
+    end
+
+    CLOUD["mock_cloud.py<br/>REST + WebSocket"]
+
+    KP --> DISP
+    KF --> DISP
+    KN --> DISP
+    DISP --> ONP & ONF & ONN
+
+    ONP -- "Start / Stop" --> PT
+
+    ONF -- "Create: NT path" --> VM
+    VM -- "removable or in monitored_paths" --> FT
+    ONF -- "Write: += IOSize" --> FT
+    FT -- "Cleanup: ScanFile" --> Q
+
+    ONN --> NT
+    NT -- "over threshold: NetworkUpload<br/>(no queue, no content scan)" --> ES
+
+    CB -- "\\.\pipe\DlpMonitor" --> PIN
+    PIN -- "ScanText" --> Q
+
+    Q --> SW
+    SW -. "pid → image" .-> PT
+    SW -- "FileWrite + violations" --> ES
+
+    ES --> LS & PS & CC
+    PS -- "\\.\pipe\DlpMonitor" --> UI
+    CC -- "HTTP(S)" --> CLOUD
 ```
-             kernel                          DlpAgent.exe  (LocalSystem service, session 0)
- ┌───────────────────────────┐   ┌──────────────────────────────────────────────────────────┐
- │ Microsoft-Windows-Kernel- │   │ etw-consumer thread                                      │
- │   Process  (1, 2)         ├──►│  EventParser (TDH layout cache)                          │
- │   File     (12, 13, 16)   │   │  ProcessTracker   pid -> image                           │
- │   Network  (10, 26)       │   │  VolumeMap        \Device\HarddiskVolumeN -> E:, USB?    │
- └───────────────────────────┘   │  FileTracker      FILE_OBJECT: Create/Write/Cleanup      │
-   event-ID filter applied       │  NetworkTracker   bytes per (pid, remote) per minute     │
-   inside ETW                    │        │ BoundedQueue<Job> (drop + count when full)       │
-                                 │        ▼                                                  │
-                                 │ scan-N workers: read prefix -> decode -> PolicyEngine     │
-                                 │        │                                                  │
-                                 │        ▼  EventSink fan-out                               │
-                                 │  LogSink   PipeServer ─────────┐   CloudClient ───────┐   │
-                                 └────────────────────────────────┼──────────────────────┼───┘
-                                                                  │ \\.\pipe\DlpMonitor  │ HTTP(S)
-                         DlpTray.exe (user session)               │                      │
-                         ListView, balloons, clipboard ◄──────────┘     mock_cloud.py ◄──┘
-                                                                        REST + WebSocket
-```
+
+| Trigger | Handler | State it updates | What it produces |
+|---|---|---|---|
+| Kernel-Process 1 / 2 | `Agent::on_process` | `ProcessTracker` (image path resolved through `VolumeMap`) | nothing directly; supplies `image` to every later event |
+| Kernel-File 12 Create | `Agent::on_file` | `VolumeMap` decides if the path is watched → `FileTracker::on_create` | nothing yet |
+| Kernel-File 16 Write | `Agent::on_file` | `FileTracker::on_write` adds `IOSize` | nothing yet |
+| Kernel-File 13 Cleanup | `Agent::on_file` | `FileTracker::on_cleanup` removes the entry | `ScanFile` job → scan worker → `FileWrite` + violations |
+| Kernel-Network 10 / 26 | `Agent::on_network` | `NetworkTracker::on_send` adds bytes per (pid, remote) | `NetworkUpload` event published directly when over threshold |
+| Clipboard change | tray → pipe → `Agent::submit_text` | none | `ScanText` job → scan worker → violations |
 
 ## Threads and ownership
 
