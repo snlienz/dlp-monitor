@@ -35,6 +35,16 @@ void usage() {
                  "  DlpAgent --service                                             entry point used by the SCM\n");
 }
 
+bool is_elevated() {
+    HANDLE token = nullptr;
+    if (!::OpenProcessToken(::GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+    TOKEN_ELEVATION elevation{};
+    DWORD size = 0;
+    const bool ok = ::GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+    ::CloseHandle(token);
+    return ok && elevation.TokenIsElevated;
+}
+
 int agent_body(dlp::Config config, HANDLE stop_event) {
     dlp::ensure_data_dir(config.data_dir);
     dlp::log::open_file(config.log_path());
@@ -117,6 +127,13 @@ int wmain(int argc, wchar_t** argv) {
         } else if (a.starts_with(L"--")) {
             mode = a;
         }
+    }
+
+    // ETW kernel providers and SCM changes both need an admin token; fail fast with a clear
+    // message instead of a bare "Access is denied" from StartTrace or OpenSCManager.
+    if ((mode == L"--console" || mode == L"--install" || mode == L"--uninstall") && !is_elevated()) {
+        std::fprintf(stderr, "fatal: %ls requires an elevated (Run as administrator) prompt\n", mode.c_str());
+        return 1;
     }
 
     try {
